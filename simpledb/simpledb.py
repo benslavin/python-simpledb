@@ -2,6 +2,7 @@ import httplib2
 import urlparse
 import urllib
 import time
+import datetime
 import hmac
 import base64
 try:
@@ -202,7 +203,7 @@ class SimpleDB(object):
 
 
     def __init__(self, aws_access_key, aws_secret_access_key, db='sdb.amazonaws.com', 
-                 secure=True, encoder=AttributeEncoder()):
+                 secure=True, encoder=AttributeEncoder(), cache_expires=None):
         """
         Use your `aws_access_key` and `aws_secret_access_key` to create a connection to
         Amazon SimpleDB.
@@ -212,6 +213,10 @@ class SimpleDB(object):
 
         The optional `secure` argument specifies whether HTTPS should be used. The 
         default value is ``True``.
+
+        The optional `cache_expires` argument controls the in-process caching of data
+        from SimpleDB by specifying the maximum number of seconds an item may be cached.
+        The default value is ``None`` which means "never expire".
         """
 
         self.aws_key = aws_access_key
@@ -223,6 +228,7 @@ class SimpleDB(object):
         self.db = db
         self.http = httplib2.Http()
         self.encoder = encoder
+        self.cache_expires = cache_expires
 
     def _make_request(self, request):
         headers = {'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8', 
@@ -891,6 +897,19 @@ class ItemNameQuery(Query):
                                   self.domain.select(self.to_expression())]
         return self._result_cache
 
+class CachedItem(object):
+    def __init__(self, item, simpledb):
+        self.item = item
+        self.created = datetime.datetime.now()
+        self.simpledb = simpledb
+
+        if simpledb.cache_expires is None:
+            self.expires = None
+        else:
+            self.expires = self.created + datetime.timedelta(simpledb.cache_expires)
+
+    def isFresh(self):
+        return self.expires is None or self.expires < datetime.datetime.now()
 
 class Domain(object):
     def __init__(self, name, simpledb):
@@ -921,9 +940,13 @@ class Domain(object):
         return self._get_query().item_names()
 
     def get(self, name):
-        if name not in self.items:
-            self.items[name] = Item.load(self.simpledb, self, name)
-        item = self.items[name]
+        if self.simpledb.cache_expires == 0:
+            item = Item.load(self.simpledb, self, name)
+        elif name not in self.items or not self.items[name].isFresh():
+            item = Item.load(self.simpledb, self, name)
+            self.items[name] = CachedItem(item, self.simpledb)
+        else:
+            item = self.items[name].item
         if not item:
             raise ItemDoesNotExist(name)
         return item
