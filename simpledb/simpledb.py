@@ -906,10 +906,10 @@ class CachedItem(object):
         if simpledb.cache_expires is None:
             self.expires = None
         else:
-            self.expires = self.created + datetime.timedelta(simpledb.cache_expires)
+            self.expires = self.created + datetime.timedelta(seconds=simpledb.cache_expires)
 
     def isFresh(self):
-        return self.expires is None or self.expires < datetime.datetime.now()
+        return self.expires is None or self.expires > datetime.datetime.now()
 
 class Domain(object):
     def __init__(self, name, simpledb):
