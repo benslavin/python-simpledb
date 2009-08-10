@@ -951,6 +951,12 @@ class Domain(object):
             raise ItemDoesNotExist(name)
         return item
 
+    def put(self, item):
+        self.simpledb.put_attributes(self, item, item.attributes)
+
+        # Update the local record cache
+        self.items[item.name] = CachedItem(item, self.simpledb)
+
     def _encode(self, attribute, value):
         # Encode an attribute, value combination using the simpledb AttributeEncoder.
         return self.simpledb.encoder.encode(self.name, attribute, value)
@@ -1013,4 +1019,4 @@ class Item(DictMixin):
         return self.attributes.keys()
 
     def save(self):
-        self.simpledb.put_attributes(self.domain, self, self.attributes)
+        self.domain.put(self)
